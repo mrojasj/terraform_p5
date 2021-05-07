@@ -7,39 +7,17 @@ resource "aws_vpc" "main" {
   }
 }
 
-resource "aws_subnet" "pub01" {
-  vpc_id     = aws_vpc.main.id
-  cidr_block = var.snet_pub01_cidr_block
-  availability_zone = "us-east-1a"
-  tags = {
-	  Name = "snet-tf-pub-01"
-  }
+data "aws_availability_zones" "this"{
+  state = "available"
 }
 
-resource "aws_subnet" "pub02" {
+resource "aws_subnet" "this" {
+  count = length(var.snet_cidr_block_list)
   vpc_id     = aws_vpc.main.id
-  cidr_block = var.snet_pub02_cidr_block
-  availability_zone = "us-east-1b"
+  cidr_block = var.snet_cidr_block_list[count.index]
+  availability_zone = data.aws_availability_zones.this.names[count.index % 2 == 0 ? 0 : 1]
   tags = {
-	  Name = "snet-tf-pub-02"
-  }
-}
-
-resource "aws_subnet" "pri01" {
-  vpc_id     = aws_vpc.main.id
-  cidr_block = var.snet_pri01_cidr_block
-  availability_zone = "us-east-1a"
-  tags = {
-	  Name = "snet-tf-pri-01"
-  }
-}
-
-resource "aws_subnet" "pri02" {
-  vpc_id     = aws_vpc.main.id
-  cidr_block = var.snet_pri02_cidr_block
-  availability_zone = "us-east-1b"
-  tags = {
-	  Name = "snet-tf-pri-02"
+	  Name = "snet-tf-0${count.index}"
   }
 }
 
@@ -64,13 +42,9 @@ resource "aws_route_table" "public" {
   }
 }
 
-resource "aws_route_table_association" "pub01" {
-  subnet_id      = aws_subnet.pub01.id
-  route_table_id = aws_route_table.public.id
-}
-
-resource "aws_route_table_association" "pub02" {
-  subnet_id      = aws_subnet.pub02.id
+resource "aws_route_table_association" "this" {
+  count = floor(length(var.snet_cidr_block_list) / 2)
+  subnet_id      = aws_subnet.this[count.index].id
   route_table_id = aws_route_table.public.id
 }
 
@@ -108,11 +82,24 @@ resource "aws_security_group" "main" {
   }
 }
 
+data "aws_ami" "amz_linux_2" {
+  most_recent = true
+  owners = ["amazon"]
+  filter {
+    name   = "owner-alias"
+    values = ["amazon"]
+  }
+  filter {
+    name   = "name"
+    values = ["amzn2-ami-hvm*"]
+  }
+}
+
 resource "aws_instance" "web" {
-  ami = var.ami
+  ami = data.aws_ami.amz_linux_2.id
   instance_type = "t3.micro"
   key_name = var.keyName
-  subnet_id = aws_subnet.pub01.id
+  subnet_id = aws_subnet.this[0].id
   associate_public_ip_address = true
   vpc_security_group_ids = [aws_security_group.main.id]
   tags = {
